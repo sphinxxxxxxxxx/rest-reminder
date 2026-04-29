@@ -3,21 +3,21 @@ name: Build Electron App
 on:
   push:
     tags:
-      - 'v*' # 只有你发布类似 v1.0.0 的版本号时才会触发打包
+      - 'v*'
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, macos-latest] # 同时启用 Windows 和 Mac 两台云电脑
+        os: [windows-latest, macos-latest]
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
@@ -30,7 +30,7 @@ jobs:
         run: npm run build -- --${{ matrix.os == 'windows-latest' && 'win' || 'mac' }}
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: app-release-${{ matrix.os }}
           path: dist/*.*
