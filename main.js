@@ -2,40 +2,42 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, screen, dialog } = require('ele
 const path = require('path');
 const fs = require('fs');
 
-// 1. 强制单例锁 (防多开)
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  app.quit();
-  process.exit(0);
-}
-
+// --- 1. 核心变量全局化，防止被垃圾回收 ---
 let mainWindow = null;
-let restWindows = []; // 支持多显示器，保存所有休息窗口的实例
-let tray = null;
-
-// 状态控制
-let timerState = 'idle'; // idle, working, resting
+let tray = null; 
+let restWindows = [];
+let timerState = 'idle'; 
 let timeLeft = 0;
 let timerInterval = null;
+
 let userConfig = {
-  workTime: 45, // 分钟
-  restTime: 5,  // 分钟
+  workTime: 45, 
+  restTime: 5,  
   mediaPath: '',
-  mediaType: '', // 'image' | 'video'
+  mediaType: '', 
   layout: { x: 50, y: 50, width: 400, height: 300 }
 };
 
-app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
-});
+// 2. 强制单例锁
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,  // 【修改】主窗口加宽，以展示横版UI
-    height: 520, // 【修改】主窗口变矮，避免多余空白
+    width: 800,
+    height: 520,
+    // 如果存在图标就设置，不存在也不要崩溃
+    icon: fs.existsSync(path.join(__dirname, 'build/icon.png')) ? path.join(__dirname, 'build/icon.png') : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -43,144 +45,57 @@ function createMainWindow() {
     }
   });
   mainWindow.loadFile('index.html');
-  // mainWindow.webContents.openDevTools(); // 调试时可开启
+  
   mainWindow.on('close', (e) => {
     if (timerState !== 'idle') {
       e.preventDefault();
-      mainWindow.hide(); // 工作时仅隐藏到托盘
+      mainWindow.hide(); 
     }
   });
 }
 
-// 2. 媒体缓存与磁盘管理
-ipcMain.handle('upload-media', async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-    filters: [{ name: 'Media', extensions: ['png', 'gif', 'mp4'] }],
-    properties: ['openFile']
-  });
-  
-  if (canceled || filePaths.length === 0) return null;
-
-  const sourcePath = filePaths[0];
-  const ext = path.extname(sourcePath).toLowerCase();
-  const mediaDir = path.join(app.getPath('userData'), 'media_cache');
-  
-  // 严格要求：清空旧文件，防垃圾文件堆积
-  if (!fs.existsSync(mediaDir)) {
-    fs.mkdirSync(mediaDir, { recursive: true });
-  } else {
-    const files = fs.readdirSync(mediaDir);
-    for (const file of files) {
-      fs.unlinkSync(path.join(mediaDir, file));
-    }
-  }
-
-  const destPath = path.join(mediaDir, `custom_media${ext}`);
-  fs.copyFileSync(sourcePath, destPath);
-
-  userConfig.mediaPath = destPath;
-  userConfig.mediaType = ext === '.mp4' ? 'video' : 'image';
-  return userConfig;
-});
-
-// 3. 休息窗口管理（多显示器支持与严格防作弊拦截）
-function showRestWindows(isAdjustMode = false) {
-  const displays = screen.getAllDisplays();
-  
-  displays.forEach((display, index) => {
-    
-    let win = new BrowserWindow({
-      x: display.bounds.x,
-      y: display.bounds.y,
-      width: display.bounds.width,
-      height: display.bounds.height,
-      transparent: true,      // 100% 透明背景
-      frame: false,           // 无边框
-      resizable: false,       // 禁止拉伸调整窗口大小
-      movable: false,         // 禁止拖动窗口
-      thickFrame: false,      // 彻底移除 Windows 下透明窗口的隐形拖拽边框
-      alwaysOnTop: !isAdjustMode, // 调整模式下不强制置顶
-      skipTaskbar: true,
-      fullscreen: true,
-      hasShadow: false,
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js')
-      }
-    });
-
-    // 强制全局最高层级 (阻断作用)
-    if (!isAdjustMode) win.setAlwaysOnTop(true, 'screen-saver'); 
-
-    // 【修改】将媒体数据传递给所有屏幕，强制所有屏幕的 isMain 均为 true
-    const query = new URLSearchParams({
-      mode: isAdjustMode ? 'adjust' : 'rest',
-      mediaPath: userConfig.mediaPath,
-      mediaType: userConfig.mediaType,
-      x: userConfig.layout.x,
-      y: userConfig.layout.y,
-      w: userConfig.layout.width,
-      h: userConfig.layout.height,
-      isMain: true 
-    });
-
-    win.loadFile('rest.html', { search: query.toString() });
-    restWindows.push(win);
-  });
-}
-
-function destroyRestWindows() {
-  restWindows.forEach(win => {
-    if (!win.isDestroyed()) {
-      // 严格要求：销毁前通知前端清除视频引用，防止内存泄漏
-      win.webContents.send('cleanup-before-destroy'); 
-      setTimeout(() => {
-        if (!win.isDestroyed()) win.destroy(); // 彻底销毁而非 hide
-      }, 100);
-    }
-  });
-  restWindows = [];
-}
-
-// 定时器控制
-function startTimer(type) {
-  clearInterval(timerInterval);
-  timerState = type;
-  
-  if (type === 'working') {
-    timeLeft = userConfig.workTime * 60;
-    if(mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
-    destroyRestWindows();
-  } else if (type === 'resting') {
-    timeLeft = userConfig.restTime * 60;
-    showRestWindows(false);
-  }
-
-  updateTray();
-  
-  timerInterval = setInterval(() => {
-    timeLeft--;
-    updateTray();
-    
-    if (timerState === 'resting') {
-       restWindows.forEach(w => w.webContents.send('timer-update', timeLeft));
-    }
-
-    if (timeLeft <= 0) {
-      if (timerState === 'working') startTimer('resting');
-      else if (timerState === 'resting') startTimer('working');
-    }
-  }, 1000);
-}
-
-// 4. 系统托盘
+// 3. 增强版托盘初始化
 function initTray() {
-  const iconPath = path.join(__dirname, 'build', 'icon.png');
-  // 加入容错保护
-  if (fs.existsSync(iconPath)) {
-      tray = new Tray(iconPath); 
-      updateTray();
-  } else {
-      console.log('提示：由于没有检测到 build/icon.png，系统托盘图标将不会显示。你可以后续补充图片。');
+  // 智能寻找图标路径
+  const iconPath = path.join(__dirname, 'build/icon.png');
+
+  console.log('正在尝试加载托盘图标:', iconPath);
+
+  if (!fs.existsSync(iconPath)) {
+    console.error('❌ 错误：在 build 目录下没找到 icon.png！请确认文件夹名字是 build 且图片名是 icon.png');
+    return;
+  }
+
+  try {
+    // 重新实例化前确保旧的被销毁（虽然这里只会运行一次）
+    if (tray) tray.destroy();
+
+    tray = new Tray(iconPath); 
+    const contextMenu = Menu.buildFromTemplate([
+      { label: '打开控制面板', click: () => {
+          if (mainWindow) mainWindow.show();
+      }},
+      { label: '立即休息', click: () => startTimer('resting') },
+      { type: 'separator' },
+      { label: '退出程序', click: () => {
+          timerState = 'idle';
+          app.exit(); // 强制退出所有进程
+      }}
+    ]);
+
+    tray.setContextMenu(contextMenu);
+    tray.setToolTip('Rest Reminder - 运行中');
+
+    // Windows 托盘点击事件
+    tray.on('click', () => {
+        if (mainWindow) {
+            mainWindow.isVisible() ? mainWindow.focus() : mainWindow.show();
+        }
+    });
+
+    console.log('✅ 托盘图标已成功挂载！');
+  } catch (error) {
+    console.error('❌ 托盘创建过程中发生崩溃:', error);
   }
 }
 
@@ -190,44 +105,119 @@ function updateTray() {
   const s = (timeLeft % 60).toString().padStart(2, '0');
   
   let hoverText = 'Rest Reminder - 待机中';
-  if (timerState === 'working') hoverText = `工作倒计时 ${m}:${s}`;
-  if (timerState === 'resting') hoverText = `休息中 ${m}:${s}`;
+  if (timerState === 'working') hoverText = `专注中: 还剩 ${m}:${s}`;
+  if (timerState === 'resting') hoverText = `休息中: 还剩 ${m}:${s}`;
   
   tray.setToolTip(hoverText);
-
-  const contextMenu = Menu.buildFromTemplate([
-    { label: '打开控制面板', click: () => mainWindow.show() },
-    { label: '立即休息', click: () => startTimer('resting') },
-    { type: 'separator' },
-    { label: '退出程序', click: () => {
-        timerState = 'idle'; // 允许关闭
-        app.quit();
-    }}
-  ]);
-  tray.setContextMenu(contextMenu);
 }
 
-// IPC 接口监听
-ipcMain.on('start-work', (e, config) => {
-  userConfig = { ...userConfig, ...config };
-  startTimer('working');
+// 4. 休息窗口逻辑
+function showRestWindows(isAdjustMode = false) {
+  const displays = screen.getAllDisplays();
+  restWindows = []; // 清空数组
+  
+  displays.forEach((display) => {
+    let win = new BrowserWindow({
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
+      transparent: true,      
+      frame: false,           
+      resizable: false,       
+      movable: false,         
+      thickFrame: false,      
+      alwaysOnTop: !isAdjustMode, 
+      skipTaskbar: true,
+      fullscreen: true,
+      webPreferences: { preload: path.join(__dirname, 'preload.js') }
+    });
+
+    if (!isAdjustMode) win.setAlwaysOnTop(true, 'screen-saver'); 
+
+    const query = new URLSearchParams({
+      mode: isAdjustMode ? 'adjust' : 'rest',
+      mediaPath: userConfig.mediaPath,
+      mediaType: userConfig.mediaType,
+      x: userConfig.layout.x, y: userConfig.layout.y,
+      w: userConfig.layout.width, h: userConfig.layout.height,
+      isMain: true
+    });
+
+    win.loadFile('rest.html', { search: query.toString() });
+    restWindows.push(win);
+  });
+}
+
+function destroyRestWindows() {
+  restWindows.forEach(win => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('cleanup-before-destroy'); 
+      win.destroy(); 
+    }
+  });
+  restWindows = [];
+}
+
+function startTimer(type) {
+  if (timerInterval) clearInterval(timerInterval);
+  timerState = type;
+  
+  if (type === 'working') {
+    timeLeft = userConfig.workTime * 60;
+    if (mainWindow) mainWindow.hide();
+    destroyRestWindows();
+  } else if (type === 'resting') {
+    timeLeft = userConfig.restTime * 60;
+    showRestWindows(false);
+  }
+  
+  updateTray();
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    updateTray();
+    if (timerState === 'resting') {
+       restWindows.forEach(w => {
+           if (w && !w.isDestroyed()) w.webContents.send('timer-update', timeLeft);
+       });
+    }
+    if (timeLeft <= 0) {
+      startTimer(timerState === 'working' ? 'resting' : 'working');
+    }
+  }, 1000);
+}
+
+// IPC 接口
+ipcMain.handle('upload-media', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    filters: [{ name: 'Media', extensions: ['png', 'gif', 'mp4'] }],
+    properties: ['openFile']
+  });
+  if (canceled) return null;
+  const sourcePath = filePaths[0];
+  const ext = path.extname(sourcePath).toLowerCase();
+  const mediaDir = path.join(app.getPath('userData'), 'media_cache');
+  if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
+  const destPath = path.join(mediaDir, `custom_media${ext}`);
+  fs.copyFileSync(sourcePath, destPath);
+  userConfig.mediaPath = destPath;
+  userConfig.mediaType = ext === '.mp4' ? 'video' : 'image';
+  return userConfig;
 });
 
-ipcMain.on('preview-mode', (e, config) => {
-  userConfig = { ...userConfig, ...config };
-  showRestWindows(true);
-});
+ipcMain.on('start-work', (e, config) => { userConfig = { ...userConfig, ...config }; startTimer('working'); });
+ipcMain.on('preview-mode', (e, config) => { userConfig = { ...userConfig, ...config }; showRestWindows(true); });
+ipcMain.on('save-layout', (e, layout) => { userConfig.layout = layout; destroyRestWindows(); });
+ipcMain.on('end-rest-early', () => { startTimer('working'); });
 
-ipcMain.on('save-layout', (e, layout) => {
-  userConfig.layout = layout;
-  destroyRestWindows(); // 退出调整模式
-});
-
-ipcMain.on('end-rest-early', () => {
-  startTimer('working');
-});
-
+// 5. 启动流程
 app.whenReady().then(() => {
   createMainWindow();
-  initTray();
+  // 在 Windows 上稍微延迟一下启动托盘，增加稳定性
+  setTimeout(initTray, 500); 
+});
+
+// 防止程序因为小错误崩溃退出
+process.on('uncaughtException', (err) => {
+  console.error('发现未捕获的错误:', err);
 });
