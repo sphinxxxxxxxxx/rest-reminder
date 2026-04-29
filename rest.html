@@ -16,14 +16,11 @@
         .media-item { width: 100%; height: 100%; object-fit: contain; }
         #resize-handle { display: none; position: absolute; bottom: -6px; right: -6px; width: 16px; height: 16px; background: var(--primary); border-radius: 50%; cursor: nwse-resize; }
         body.adjust-mode #resize-handle { display: block; }
-        
         #bottom-control-bar {
-            /* 【修改点】将 bottom 从 40px 改为 80px，彻底避开任务栏遮挡 */
             position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
             background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             padding: 16px 32px; border-radius: 40px; display: flex; align-items: center; gap: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); pointer-events: auto;
         }
-        
         #countdown-box { color: var(--text-color); font-size: 22px; font-weight: 600; font-family: monospace; }
         #action-btn { background: var(--danger); color: white; border: none; padding: 10px 24px; border-radius: 20px; font-weight: 600; cursor: pointer; }
     </style>
@@ -40,9 +37,7 @@
         const isMain = params.get('isMain') === 'true';
         const container = document.getElementById('media-container');
         const actionBtn = document.getElementById('action-btn');
-        
         if (mode === 'adjust') { document.body.classList.add('adjust-mode'); actionBtn.innerText = "保存布局"; }
-        
         if (isMain && params.get('mediaPath')) {
             const path = `file://${params.get('mediaPath')}`;
             container.style.left = `${params.get('x')}px`; container.style.top = `${params.get('y')}px`;
@@ -52,14 +47,12 @@
             if (media.tagName === 'VIDEO') { media.loop = true; media.muted = true; media.play(); }
             container.prepend(media);
         }
-        
         actionBtn.addEventListener('click', () => {
             if (mode === 'adjust') {
                 const r = container.getBoundingClientRect();
                 window.electronAPI.saveLayout({ x: r.left, y: r.top, width: r.width, height: r.height });
             } else window.electronAPI.endRestEarly();
         });
-        
         if (mode === 'adjust') {
             let drag = false, resize = false, ox, oy, sw, sh, sx, sy;
             container.onmousedown = (e) => { if(e.target.id!=='resize-handle') {drag=true; ox=e.clientX-container.offsetLeft; oy=e.clientY-container.offsetTop;} };
@@ -70,7 +63,6 @@
             };
             document.onmouseup = () => drag = resize = false;
         }
-        
         window.electronAPI.onTimerUpdate((t) => {
             const m = Math.floor(t/60).toString().padStart(2,'0'), s = (t%60).toString().padStart(2,'0');
             document.getElementById('countdown-box').innerText = `${m}:${s}`;
