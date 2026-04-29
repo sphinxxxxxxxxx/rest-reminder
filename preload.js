@@ -6,8 +6,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     previewMode: (config) => ipcRenderer.send('preview-mode', config),
     saveLayout: (layout) => ipcRenderer.send('save-layout', layout),
     endRestEarly: () => ipcRenderer.send('end-rest-early'),
-    
-    // 监听事件
     onTimerUpdate: (callback) => ipcRenderer.on('timer-update', (event, time) => callback(time)),
     onCleanup: (callback) => ipcRenderer.on('cleanup-before-destroy', () => callback())
 });
