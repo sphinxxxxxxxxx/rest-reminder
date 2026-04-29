@@ -1,6 +1,6 @@
 {
   "name": "rest-reminder",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "强制休息提醒器",
   "main": "main.js",
   "scripts": {
