@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, screen, dialog } = require('ele
 const path = require('path');
 const fs = require('fs');
 
-// --- 1. 核心变量全局化，防止被垃圾回收 ---
 let mainWindow = null;
 let tray = null; 
 let restWindows = [];
@@ -18,7 +17,6 @@ let userConfig = {
   layout: { x: 50, y: 50, width: 400, height: 300 }
 };
 
-// 2. 强制单例锁
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
@@ -36,7 +34,6 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
     height: 520,
-    // 如果存在图标就设置，不存在也不要崩溃
     icon: fs.existsSync(path.join(__dirname, 'build/icon.png')) ? path.join(__dirname, 'build/icon.png') : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -54,48 +51,26 @@ function createMainWindow() {
   });
 }
 
-// 3. 增强版托盘初始化
 function initTray() {
-  // 智能寻找图标路径
   const iconPath = path.join(__dirname, 'build/icon.png');
-
-  console.log('正在尝试加载托盘图标:', iconPath);
-
-  if (!fs.existsSync(iconPath)) {
-    console.error('❌ 错误：在 build 目录下没找到 icon.png！请确认文件夹名字是 build 且图片名是 icon.png');
-    return;
-  }
+  if (!fs.existsSync(iconPath)) return;
 
   try {
-    // 重新实例化前确保旧的被销毁（虽然这里只会运行一次）
     if (tray) tray.destroy();
-
     tray = new Tray(iconPath); 
     const contextMenu = Menu.buildFromTemplate([
-      { label: '打开控制面板', click: () => {
-          if (mainWindow) mainWindow.show();
-      }},
+      { label: '打开控制面板', click: () => { if (mainWindow) mainWindow.show(); } },
       { label: '立即休息', click: () => startTimer('resting') },
       { type: 'separator' },
-      { label: '退出程序', click: () => {
-          timerState = 'idle';
-          app.exit(); // 强制退出所有进程
-      }}
+      { label: '退出程序', click: () => { timerState = 'idle'; app.exit(); } }
     ]);
-
     tray.setContextMenu(contextMenu);
     tray.setToolTip('Rest Reminder - 运行中');
-
-    // Windows 托盘点击事件
     tray.on('click', () => {
-        if (mainWindow) {
-            mainWindow.isVisible() ? mainWindow.focus() : mainWindow.show();
-        }
+        if (mainWindow) mainWindow.isVisible() ? mainWindow.focus() : mainWindow.show();
     });
-
-    console.log('✅ 托盘图标已成功挂载！');
   } catch (error) {
-    console.error('❌ 托盘创建过程中发生崩溃:', error);
+    console.error('托盘错误:', error);
   }
 }
 
@@ -103,18 +78,15 @@ function updateTray() {
   if (!tray) return;
   const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
   const s = (timeLeft % 60).toString().padStart(2, '0');
-  
   let hoverText = 'Rest Reminder - 待机中';
   if (timerState === 'working') hoverText = `专注中: 还剩 ${m}:${s}`;
   if (timerState === 'resting') hoverText = `休息中: 还剩 ${m}:${s}`;
-  
   tray.setToolTip(hoverText);
 }
 
-// 4. 休息窗口逻辑
 function showRestWindows(isAdjustMode = false) {
   const displays = screen.getAllDisplays();
-  restWindows = []; // 清空数组
+  restWindows = []; 
   
   displays.forEach((display) => {
     let win = new BrowserWindow({
@@ -187,10 +159,10 @@ function startTimer(type) {
   }, 1000);
 }
 
-// IPC 接口
+// 【修改点】扩充了所有主流图片和视频的格式支持
 ipcMain.handle('upload-media', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-    filters: [{ name: 'Media', extensions: ['png', 'gif', 'mp4'] }],
+    filters: [{ name: 'MediaFiles', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp4', 'webm'] }],
     properties: ['openFile']
   });
   if (canceled) return null;
@@ -198,10 +170,14 @@ ipcMain.handle('upload-media', async () => {
   const ext = path.extname(sourcePath).toLowerCase();
   const mediaDir = path.join(app.getPath('userData'), 'media_cache');
   if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
+  else {
+    const files = fs.readdirSync(mediaDir);
+    for (const file of files) fs.unlinkSync(path.join(mediaDir, file));
+  }
   const destPath = path.join(mediaDir, `custom_media${ext}`);
   fs.copyFileSync(sourcePath, destPath);
   userConfig.mediaPath = destPath;
-  userConfig.mediaType = ext === '.mp4' ? 'video' : 'image';
+  userConfig.mediaType = (ext === '.mp4' || ext === '.webm') ? 'video' : 'image';
   return userConfig;
 });
 
@@ -210,14 +186,9 @@ ipcMain.on('preview-mode', (e, config) => { userConfig = { ...userConfig, ...con
 ipcMain.on('save-layout', (e, layout) => { userConfig.layout = layout; destroyRestWindows(); });
 ipcMain.on('end-rest-early', () => { startTimer('working'); });
 
-// 5. 启动流程
 app.whenReady().then(() => {
   createMainWindow();
-  // 在 Windows 上稍微延迟一下启动托盘，增加稳定性
   setTimeout(initTray, 500); 
 });
 
-// 防止程序因为小错误崩溃退出
-process.on('uncaughtException', (err) => {
-  console.error('发现未捕获的错误:', err);
-});
+process.on('uncaughtException', (err) => { console.error('发现未捕获的错误:', err); });
