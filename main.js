@@ -34,7 +34,8 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
     height: 520,
-    icon: fs.existsSync(path.join(__dirname, 'build/icon.png')) ? path.join(__dirname, 'build/icon.png') : undefined,
+    // 窗口左上角的图标（非托盘）
+    icon: path.join(__dirname, 'build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -51,12 +52,32 @@ function createMainWindow() {
   });
 }
 
+// 【关键修复】极其鲁棒的图标路径获取函数
+function getIconPath() {
+  // 第一选择：如果是打包后的环境，从 resourcesPath 提取我们配置进去的 icon.png
+  const packagedPath = path.join(process.resourcesPath, 'icon.png');
+  // 第二选择：开发环境下的相对路径
+  const devPath = path.join(__dirname, 'build', 'icon.png');
+  
+  if (app.isPackaged && fs.existsSync(packagedPath)) {
+      return packagedPath;
+  } else if (fs.existsSync(devPath)) {
+      return devPath;
+  }
+  
+  console.error("警告: 在所有路径下都找不到托盘图标");
+  return null;
+}
+
 function initTray() {
-  const iconPath = path.join(__dirname, 'build/icon.png');
-  if (!fs.existsSync(iconPath)) return;
+  const iconPath = getIconPath();
+  
+  // 如果还是找不到，为了防止程序崩溃，直接中止创建托盘
+  if (!iconPath) return;
 
   try {
     if (tray) tray.destroy();
+    
     tray = new Tray(iconPath); 
     const contextMenu = Menu.buildFromTemplate([
       { label: '打开控制面板', click: () => { if (mainWindow) mainWindow.show(); } },
@@ -64,13 +85,15 @@ function initTray() {
       { type: 'separator' },
       { label: '退出程序', click: () => { timerState = 'idle'; app.exit(); } }
     ]);
+    
     tray.setContextMenu(contextMenu);
     tray.setToolTip('Rest Reminder - 运行中');
+    
     tray.on('click', () => {
         if (mainWindow) mainWindow.isVisible() ? mainWindow.focus() : mainWindow.show();
     });
   } catch (error) {
-    console.error('托盘错误:', error);
+    console.error('托盘创建过程中发生错误:', error);
   }
 }
 
@@ -159,7 +182,6 @@ function startTimer(type) {
   }, 1000);
 }
 
-// 【修改点】扩充了所有主流图片和视频的格式支持
 ipcMain.handle('upload-media', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     filters: [{ name: 'MediaFiles', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp4', 'webm'] }],
@@ -188,7 +210,8 @@ ipcMain.on('end-rest-early', () => { startTimer('working'); });
 
 app.whenReady().then(() => {
   createMainWindow();
-  setTimeout(initTray, 500); 
+  // 延迟挂载托盘，等待系统资源分配完毕
+  setTimeout(initTray, 800); 
 });
 
 process.on('uncaughtException', (err) => { console.error('发现未捕获的错误:', err); });
