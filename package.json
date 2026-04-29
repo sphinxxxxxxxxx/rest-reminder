@@ -1,6 +1,6 @@
 {
   "name": "rest-reminder",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "强制休息提醒器",
   "main": "main.js",
   "scripts": {
@@ -16,28 +16,10 @@
   "build": {
     "appId": "com.example.restreminder",
     "productName": "Rest Reminder",
-    "directories": {
-      "output": "dist"
-    },
-    "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
-    },
-    "mac": {
-      "target": "dmg",
-      "icon": "build/icon.icns"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": true,
-      "createDesktopShortcut": true
-    },
-    "extraResources": [
-      {
-        "from": "build/icon.png",
-        "to": "icon.png"
-      }
-    ]
+    "directories": { "output": "dist" },
+    "win": { "target": "nsis", "icon": "build/icon.ico" },
+    "mac": { "target": "dmg", "icon": "build/icon.icns" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": true, "createDesktopShortcut": true },
+    "extraResources": [ { "from": "build/icon.png", "to": "icon.png" } ]
   }
 }
