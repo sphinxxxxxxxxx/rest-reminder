@@ -1,0 +1,36 @@
+name: Build Electron App
+
+on:
+  push:
+    tags:
+      - 'v*' # 只有你发布类似 v1.0.0 的版本号时才会触发打包
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest] # 同时启用 Windows 和 Mac 两台云电脑
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build App
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build -- --${{ matrix.os == 'windows-latest' && 'win' || 'mac' }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-release-${{ matrix.os }}
+          path: dist/*.*
