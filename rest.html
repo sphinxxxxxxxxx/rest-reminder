@@ -11,92 +11,100 @@
         .media-item { position: absolute; width: 100%; height: 100%; object-fit: contain; top:0; left:0; }
         .hidden { display: none; }
         
-        /* 布局：远离任务栏，高雅悬浮于底部偏上 */
+        /* 1. 外层容器：只负责定位 */
         #ui-wrapper {
             position: absolute;
-            bottom: 80px; 
+            bottom: 100px; /* 稍微再往上提一点，远离系统底边 */
             left: 50%;
             transform: translateX(-50%);
             display: flex;
             flex-direction: column;
             align-items: center;
-            z-index: 10;
+            z-index: 100;
         }
 
-        /* 纯正无伪影的磨砂黑胶药丸 */
+        /* 2. 核心药丸底座：使用绝对精确的圆角剪裁，物理性屏蔽矩形虚影 */
         #timer-pill {
-            background: rgba(15, 15, 15, 0.7);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            padding: 16px 44px;
-            border-radius: 80px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            position: relative;
+            padding: 16px 48px;
             display: flex;
             align-items: center;
             justify-content: center;
+            /* 关键：用 clip-path 强行进行硬裁切，这是杀掉矩形伪影的绝招 */
+            clip-path: inset(0 round 80px); 
+            -webkit-clip-path: inset(0 round 80px);
         }
 
-        /* 修复字体字间距带来的右侧留白偏移，实现视觉绝对居中 */
+        /* 分离出的背景层：专职负责磨砂效果 */
+        #pill-bg {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(20, 20, 20, 0.75);
+            backdrop-filter: blur(28px) saturate(180%);
+            -webkit-backdrop-filter: blur(28px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 80px;
+            z-index: -1;
+            /* 强制开启硬件加速渲染 */
+            will-change: filter;
+        }
+
         #countdown {
-            font-size: 64px;
+            font-size: 72px; /* 稍微加大一点，视觉更有冲击力 */
             color: #ffffff;
-            font-weight: 700;
-            font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+            font-weight: 800;
+            font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Monaco", monospace;
             line-height: 1; 
             letter-spacing: 4px;
-            margin-right: -4px; 
-            text-shadow: 0 4px 15px rgba(0,0,0,0.4);
-            transition: color 0.3s ease;
+            margin-right: -4px; /* 抵消字间距带来的居中偏差 */
+            text-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            transition: color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* 隐秘退出彩蛋：分离式流光充能条 */
+        /* 独立进度条：放在外层，确保不参与药丸的裁切逻辑 */
         #progress-track {
-            width: 80%;
+            width: 160px;
             height: 4px;
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 4px;
-            margin-top: 14px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            margin-top: 18px;
             overflow: hidden;
             opacity: 0;
-            transition: opacity 0.3s ease;
-            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            transition: opacity 0.4s ease;
         }
 
         #progress-fill {
             height: 100%;
             width: 0%;
             background: #10B981;
-            box-shadow: 0 0 12px #10B981;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.6);
         }
 
-        #save-btn { position: fixed; bottom: 200px; left: 50%; transform: translateX(-50%); padding: 15px 40px; background: #10B981; color: white; border: none; border-radius: 30px; font-weight: 800; cursor: pointer; pointer-events: auto; display: none; font-size:16px; box-shadow: 0 10px 20px rgba(16,185,129,0.3); z-index: 20; }
-        body.adjust-mode #save-btn { display: block; outline: 2px dashed #10B981; }
-        #save-btn:hover { background: #059669; }
+        #save-btn { position: fixed; bottom: 220px; left: 50%; transform: translateX(-50%); padding: 15px 45px; background: #10B981; color: white; border: none; border-radius: 40px; font-weight: 800; cursor: pointer; pointer-events: auto; display: none; font-size:16px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); z-index: 200; }
+        body.adjust-mode #save-btn { display: block; }
+        #save-btn:hover { background: #059669; transform: translateX(-50%) scale(1.05); transition: 0.2s; }
     </style>
 </head>
 <body>
     <div id="media-container">
         <div id="v-wrapper" style="width:100%; height:100%"></div>
-        <div id="handle" style="position:absolute; bottom:0; right:0; width:20px; height:20px; background:#10B981; cursor:nwse-resize; display:none; z-index:30;"></div>
+        <div id="handle" style="position:absolute; bottom:0; right:0; width:20px; height:20px; background:#10B981; cursor:nwse-resize; display:none; z-index:300;"></div>
     </div>
     
     <div id="ui-wrapper">
-        <div id="timer-pill"><div id="countdown">00:00</div></div>
-        <div id="progress-track"><div id="progress-fill"></div></div>
+        <div id="timer-pill">
+            <div id="pill-bg"></div>
+            <div id="countdown">00:00</div>
+        </div>
+        <div id="progress-track">
+            <div id="progress-fill"></div>
+        </div>
     </div>
     
     <button id="save-btn">退出预览模式</button>
 
     <script>
-        // 终极路径解析算法：完美兼容带有空格、井号、中文字符的任意盘符路径
-        const getFileUrl = (filepath) => {
-            if (!filepath) return '';
-            const pathPosix = filepath.replace(/\\/g, '/');
-            const encodedPath = pathPosix.split('/').map(encodeURIComponent).join('/');
-            return 'file:///' + encodedPath.replace('%3A', ':'); 
-        };
-
+        const getFileUrl = (p) => 'file:///' + p.split('\\').join('/').split('/').map(s => encodeURIComponent(s)).join('/').replace('%3A', ':');
         const params = new URLSearchParams(window.location.search);
         const mode = params.get('mode'), isAdjust = mode === 'adjust', displayId = params.get('displayId'); 
         const container = document.getElementById('media-container'), wrapper = document.getElementById('v-wrapper');
@@ -110,14 +118,13 @@
             v1.src = getFileUrl(p1); v1.className = 'media-item'; wrapper.appendChild(v1);
             if (p2 && v1.tagName === 'VIDEO') {
                 const v2 = document.createElement('video'); v2.src = getFileUrl(p2); v2.className = 'media-item hidden'; v2.loop = true; v2.muted = true; wrapper.appendChild(v2);
-                v1.onended = () => { v1.classList.add('hidden'); v2.classList.remove('hidden'); v2.play().catch(e=>console.log('Video Play Error:', e)); };
-                v1.autoplay = true; v1.muted = true; v1.play().catch(e=>console.log('Video Play Error:', e));
-            } else if (v1.tagName === 'VIDEO') { 
-                v1.loop = true; v1.autoplay = true; v1.muted = true; v1.play().catch(e=>console.log('Video Play Error:', e)); 
+                v1.onended = () => { v1.classList.add('hidden'); v2.classList.remove('hidden'); v2.play().catch(e=>{}); };
+                v1.autoplay = true; v1.muted = true; v1.play().catch(e=>{});
+            } else if (v1.tagName === 'VIDEO') {
+                v1.loop = true; v1.autoplay = true; v1.muted = true; v1.play().catch(e=>{});
             }
         }
 
-        // 调整模式下的独立存储与多指防粘连
         if (isAdjust) {
             document.getElementById('handle').style.display = 'block';
             let d = false, r = false, ox, oy, sw, sh, sx, sy;
@@ -130,7 +137,6 @@
             document.getElementById('save-btn').onclick = () => window.electronAPI.exitAdjustMode();
         }
 
-        // 彩蛋级隐蔽交互：长按防作弊退出机制
         let escTimer = null, holdStarted = false;
         const progressTrack = document.getElementById('progress-track');
         const progressFill = document.getElementById('progress-fill');
@@ -139,11 +145,9 @@
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape' && !isAdjust && !holdStarted) {
                 holdStarted = true;
-                countdown.style.color = '#10B981'; // 变绿提示触发盲操
+                countdown.style.color = '#10B981';
                 progressTrack.style.opacity = '1';
-                progressFill.style.transition = 'width 2s cubic-bezier(0.2, 1, 0.3, 1)';
-                
-                // 强制下一帧重绘，确保 CSS 过渡动画丝滑执行
+                progressFill.style.transition = 'width 2s cubic-bezier(0.1, 0.7, 0.1, 1)';
                 requestAnimationFrame(() => { progressFill.style.width = '100%'; });
                 escTimer = setTimeout(() => { window.electronAPI.endRestEarly(); }, 2000);
             }
@@ -151,10 +155,9 @@
         
         document.addEventListener('keyup', e => {
             if (e.key === 'Escape') { 
-                clearTimeout(escTimer); 
-                holdStarted = false; 
+                clearTimeout(escTimer); holdStarted = false; 
                 countdown.style.color = '#ffffff';
-                progressFill.style.transition = 'width 0.15s ease-out';
+                progressFill.style.transition = 'width 0.2s ease-out';
                 progressFill.style.width = '0%';
                 setTimeout(() => { if (!holdStarted) progressTrack.style.opacity = '0'; }, 150);
             }
