@@ -2,172 +2,106 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>Rest Reminder</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --primary: #10B981; 
-            --primary-light: #D1FAE5;
-            --gradient-btn: linear-gradient(135deg, #34D399 0%, #059669 100%);
-            --shadow-btn: 0px 10px 20px rgba(16, 185, 129, 0.25);
-            --radius-xl: 24px; --radius-lg: 16px; --radius-md: 12px;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        
-        /* 流动渐变底层 */
-        html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
-        .window-frame {
-            width: 100vw; height: 100vh; overflow: hidden; border-radius: 16px; position: relative;
-            background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
-            font-family: 'Poppins', sans-serif; color: #2B3674;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-        }
-
-        /* 顶部自定义拖拽栏 */
-        .drag-bar {
-            position: absolute; top: 0; left: 0; width: 100%; height: 40px;
-            -webkit-app-region: drag; display: flex; justify-content: flex-end; align-items: center; padding: 0 16px; z-index: 1000;
-        }
-        .drag-bar button {
-            -webkit-app-region: no-drag; background: transparent; border: none; font-size: 18px; 
-            width: 32px; height: 32px; border-radius: 50%; cursor: pointer; color: #2B3674; font-weight: bold; transition: 0.2s;
-        }
-        .drag-bar button:hover { background: rgba(255,255,255,0.4); }
+        :root { --primary: #10B981; --gradient: linear-gradient(135deg, #34D399 0%, #059669 100%); }
+        * { box-sizing: border-box; margin: 0; padding: 0; outline: none; }
+        body { width: 100vw; height: 100vh; overflow: hidden; background: transparent; font-family: 'Poppins', sans-serif; display: flex; align-items: center; justify-content: center; }
+        .window-frame { width: 95%; height: 90%; border-radius: 24px; position: relative; background: linear-gradient(45deg, #a8edea 0%, #fed6e3 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 20px 50px rgba(0,0,0,0.1); }
+        .drag-bar { position: absolute; top: 0; width: 100%; height: 45px; -webkit-app-region: drag; display: flex; justify-content: flex-end; padding: 10px 20px; z-index: 100; }
+        .drag-bar button { -webkit-app-region: no-drag; background: rgba(255,255,255,0.3); border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; margin-left: 10px; color:#2B3674; font-weight:bold; transition:0.2s;}
+        .drag-bar button:hover { background: rgba(255,255,255,0.6); }
         .drag-bar #close-btn:hover { background: #ff4757; color: white; }
-
-        /* 核心磨砂玻璃面板 */
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.4);
-            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
-            border-radius: var(--radius-xl); padding: 32px; width: 90%; max-width: 680px; margin-top: 20px;
-        }
-
-        /* 栅格布局 (设置页) */
-        .grid-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
-        .inner-card { background: rgba(255, 255, 255, 0.6); padding: 20px; border-radius: var(--radius-lg); height: 100%; }
-        h2 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-        .form-group { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; }
         
-        input[type="number"] { width: 70px; padding: 8px; border: none; border-radius: var(--radius-md); text-align: center; font-weight: 700; color: var(--primary); outline: none; background: rgba(255,255,255,0.8); }
-        button { font-family: inherit; font-weight: 700; border: none; border-radius: var(--radius-lg); cursor: pointer; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .glass-panel { background: rgba(255, 255, 255, 0.35); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); border: 1px solid rgba(255,255,255,0.5); border-radius: 24px; padding: 30px; width: 90%; }
         
-        button.outline { background: rgba(255,255,255,0.6); color: var(--primary); padding: 10px 20px; box-shadow: inset 0 0 0 1px var(--primary); }
-        button.outline:hover:not(:disabled) { background: var(--primary); color: white; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        
-        .main-btn { width: 100%; font-size: 16px; padding: 16px; background: var(--gradient-btn); color: white; box-shadow: var(--shadow-btn); border-radius: var(--radius-xl); }
-        .main-btn:hover { box-shadow: 0px 15px 25px rgba(16, 185, 129, 0.35); transform: translateY(-2px); }
+        .fade-in { animation: smoothShow 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes smoothShow { 0% { opacity: 0; transform: scale(0.95) translateY(10px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
 
-        /* 工作模式视图 (巨大的倒计时) */
-        #working-view { text-align: center; padding: 40px 20px; }
-        .timer-title { font-size: 20px; font-weight: 600; color: #64748B; margin-bottom: 10px; }
-        .huge-timer { font-size: 80px; font-weight: 700; color: var(--primary); font-family: monospace; line-height: 1; margin-bottom: 40px; text-shadow: 0 4px 15px rgba(16,185,129,0.2); }
-        .btn-group { display: flex; gap: 16px; justify-content: center; }
-        .btn-group button { width: 160px; padding: 14px; font-size: 15px; }
-
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .card { background: rgba(255,255,255,0.5); padding: 18px; border-radius: 16px; height:100%; }
+        h2 { font-size: 14px; margin-bottom: 15px; color: #1e293b; opacity: 0.8; }
+        .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
+        input { width: 60px; border: none; border-radius: 8px; padding: 5px; text-align: center; background: white; color: var(--primary); font-weight: 700; }
+        button.btn { border: none; border-radius: 12px; cursor: pointer; font-weight: 700; transition: 0.3s; display:flex; align-items:center; justify-content:center; }
+        .btn-outline { background: white; color: var(--primary); border: 1px solid var(--primary); padding: 8px 15px; font-size: 12px; }
+        .btn-outline:hover:not(:disabled) { background: var(--primary); color: white; }
+        .btn-outline:disabled { opacity:0.5; cursor:not-allowed; }
+        .btn-main { width: 100%; padding: 15px; background: var(--gradient); color: white; font-size: 16px; box-shadow: 0 10px 20px rgba(16,185,129,0.2); }
+        .btn-main:hover { transform: translateY(-2px); box-shadow: 0 15px 25px rgba(16,185,129,0.35); }
+        #working-view { text-align: center; }
+        .timer { font-size: 80px; font-weight: 800; color: var(--primary); margin: 20px 0; font-family: monospace; text-shadow: 0 4px 15px rgba(16,185,129,0.2);}
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
 <body>
     <div class="window-frame">
-        <div class="drag-bar">
-            <button id="min-btn">─</button>
-            <button id="close-btn">✕</button>
-        </div>
-
-        <!-- 视图 1：设置页面 -->
-        <div class="glass-panel" id="setup-view">
-            <div class="grid-row">
-                <div class="inner-card">
-                    <h2>⏱ 时间设置</h2>
-                    <div class="form-group"><label>专注时长 (Min)</label><input type="number" id="workTime" value="45"></div>
-                    <div class="form-group"><label>休息时长 (Min)</label><input type="number" id="restTime" value="5"></div>
-                </div>
-                <div class="inner-card">
-                    <h2>🎨 媒体库 (图片/动图/视频)</h2>
-                    <div class="form-group"><button id="uploadBtn" class="outline">📁 选择</button><span id="mediaStatus" style="font-size:12px; color: #64748b;">未选择</span></div>
-                    <button id="previewBtn" class="outline" style="width:100%; margin-top: 5px;" disabled>👁️ 预览与调整</button>
+        <div class="drag-bar"><button id="min-btn">－</button><button id="close-btn">✕</button></div>
+        
+        <div class="glass-panel fade-in" id="setup-view">
+            <div class="grid">
+                <div class="card"><h2>⏱ 时间设定</h2><div class="row">专注 (Min) <input type="number" id="workTime" value="45"></div><div class="row">休息 (Min) <input type="number" id="restTime" value="5"></div></div>
+                <div class="card">
+                    <h2>🎨 媒体资产</h2>
+                    <div class="row"><button id="up1" class="btn btn-outline">📁 上传出场视频</button><span id="s1" style="font-size:10px; color:#64748b">未就绪</span></div>
+                    <div id="secondary-area" style="display:none"><div class="row"><button id="up2" class="btn btn-outline">📁 增加承接循环</button><span id="s2" style="font-size:10px; color:#64748b">未就绪</span></div></div>
+                    <button id="previewBtn" class="btn btn-outline" style="width:100%;margin-top:5px" disabled>👁️ 预览与排版</button>
                 </div>
             </div>
-            <button id="startBtn" class="main-btn">🚀 开始专注模式</button>
+            <button id="startBtn" class="btn btn-main">🚀 开启专注循环</button>
         </div>
 
-        <!-- 视图 2：运行时的倒计时面板 -->
-        <div class="glass-panel" id="working-view" style="display: none;">
-            <div class="timer-title">正在专注中，请保持高效...</div>
-            <div id="main-countdown" class="huge-timer">00:00</div>
-            <div class="btn-group">
-                <button id="continueBtn" class="outline">继续后台运行</button>
-                <button id="restartBtn" class="main-btn">重新开始计时</button>
+        <div class="glass-panel" id="working-view" style="display:none">
+            <div style="font-weight:600; color:#64748b; font-size:18px;">正在专注中，请保持高效...</div>
+            <div id="main-countdown" class="timer">00:00</div>
+            <div style="display:flex; gap:15px; justify-content:center;">
+                <button id="continueBtn" class="btn btn-outline" style="width:140px; padding:12px; font-size:14px;">继续后台运行</button>
+                <button id="restartBtn" class="btn btn-main" style="width:140px; padding:12px; font-size:14px;">重新开始计时</button>
             </div>
         </div>
     </div>
-
+    
     <script>
-        // 兼容浏览器预览环境
-        if (!window.electronAPI) {
-            window.electronAPI = {
-                uploadMedia: async () => ({ mediaPath: 'mock' }), previewMode: () => {}, startWork: () => {},
-                hideWindow: () => {}, minWindow: () => {}, restartWork: () => {},
-                onStateSync: () => {}, onMainTimerTick: () => {}
-            };
-        }
-
-        // --- 窗口基础控制 ---
-        document.getElementById('min-btn').onclick = () => window.electronAPI.minWindow();
-        document.getElementById('close-btn').onclick = () => window.electronAPI.hideWindow();
-
-        // --- 逻辑与数据控制 ---
-        const setupView = document.getElementById('setup-view');
-        const workingView = document.getElementById('working-view');
-        const countdownEl = document.getElementById('main-countdown');
-
-        // 接收主进程状态同步 (决定显示哪个面板)
-        window.electronAPI.onStateSync((data) => {
-            if (data.state === 'working') {
-                setupView.style.display = 'none';
-                workingView.style.display = 'block';
-                updateTimerText(data.timeLeft);
+        const $ = id => document.getElementById(id);
+        $('min-btn').onclick = () => window.electronAPI.minWindow();
+        $('close-btn').onclick = () => window.electronAPI.hideWindow();
+        
+        function switchView(toWorking) {
+            if (toWorking) {
+                $('setup-view').style.display = 'none';
+                $('working-view').style.display = 'block';
+                $('working-view').classList.remove('fade-in');
+                void $('working-view').offsetWidth; 
+                $('working-view').classList.add('fade-in');
             } else {
-                setupView.style.display = 'block';
-                workingView.style.display = 'none';
+                $('working-view').style.display = 'none';
+                $('setup-view').style.display = 'block';
+                $('setup-view').classList.remove('fade-in');
+                void $('setup-view').offsetWidth;
+                $('setup-view').classList.add('fade-in');
             }
-        });
-
-        // 接收主进程每秒的倒计时心跳
-        window.electronAPI.onMainTimerTick((time) => updateTimerText(time));
-
-        function updateTimerText(time) {
-            const m = Math.floor(time / 60).toString().padStart(2, '0');
-            const s = (time % 60).toString().padStart(2, '0');
-            countdownEl.innerText = `${m}:${s}`;
         }
 
-        document.getElementById('uploadBtn').addEventListener('click', async () => {
-            const result = await window.electronAPI.uploadMedia();
-            if (result) {
-                document.getElementById('mediaStatus').innerText = '✨ 已就绪';
-                document.getElementById('mediaStatus').style.color = 'var(--primary)';
-                document.getElementById('previewBtn').disabled = false;
-            }
+        window.electronAPI.onStateSync(d => {
+            switchView(d.state === 'working');
+            $('workTime').value = d.workTime || 45; $('restTime').value = d.restTime || 5;
+            if (d.hasPrimary) { $('s1').innerText = '✅ OK'; $('s1').style.color = '#10B981'; $('previewBtn').disabled = false; $('secondary-area').style.display = 'block'; }
+            if (d.hasSecondary) { $('s2').innerText = '✅ OK'; $('s2').style.color = '#10B981'; } else { $('s2').innerText = '未就绪'; $('s2').style.color = '#64748b'; }
         });
 
-        const getConfig = () => ({ workTime: parseInt(document.getElementById('workTime').value), restTime: parseInt(document.getElementById('restTime').value) });
-        
-        document.getElementById('previewBtn').onclick = () => window.electronAPI.previewMode(getConfig());
-        
-        document.getElementById('startBtn').onclick = () => {
-            window.electronAPI.startWork(getConfig());
-            // 立即切换 UI 状态，主进程会自动隐藏窗口，下次打开就是倒计时了
-            setupView.style.display = 'none';
-            workingView.style.display = 'block';
-        };
+        window.electronAPI.onMainTimerTick(t => {
+            const m = Math.floor(t/60).toString().padStart(2,'0'), s = (t%60).toString().padStart(2,'0');
+            $('main-countdown').innerText = `${m}:${s}`;
+        });
 
-        // --- 工作面板按钮 ---
-        document.getElementById('continueBtn').onclick = () => window.electronAPI.hideWindow(); // 点击继续，直接收到托盘
-        document.getElementById('restartBtn').onclick = () => window.electronAPI.restartWork(); // 点击重新开始，重置主进程时间
+        $('up1').onclick = async () => { const r = await window.electronAPI.uploadMedia(false); if(r) { $('s1').innerText = '✅ OK'; $('s1').style.color = '#10B981'; $('secondary-area').style.display = 'block'; $('previewBtn').disabled = false; if(!r.hasSecondary) { $('s2').innerText = '未就绪'; $('s2').style.color = '#64748b'; } } };
+        $('up2').onclick = async () => { const r = await window.electronAPI.uploadMedia(true); if(r) { $('s2').innerText = '✅ OK'; $('s2').style.color = '#10B981'; } };
+        
+        const getC = () => ({ workTime: parseInt($('workTime').value), restTime: parseInt($('restTime').value) });
+        $('previewBtn').onclick = () => window.electronAPI.previewMode(getC());
+        
+        $('startBtn').onclick = () => { window.electronAPI.startWork(getC()); switchView(true); };
+        $('continueBtn').onclick = () => window.electronAPI.hideWindow();
+        $('restartBtn').onclick = () => window.electronAPI.restartWork();
     </script>
 </body>
 </html>
