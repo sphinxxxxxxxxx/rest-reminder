@@ -41,9 +41,12 @@ function showRestWindows(isAdjustMode = false) {
       x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height,
       transparent: true, frame: false, resizable: false, movable: false, thickFrame: false,      
       alwaysOnTop: !isAdjustMode, skipTaskbar: true, fullscreen: true, backgroundColor: '#00000000',
+      kiosk: !isAdjustMode, // 【关键新增】非调整模式下开启 Kiosk 霸屏模式，屏蔽系统快捷键
       webPreferences: { preload: path.join(__dirname, 'preload.js') }
     });
+    
     if (!isAdjustMode) win.setAlwaysOnTop(true, 'screen-saver'); 
+    
     const layout = userConfig.layouts[display.id] || { x: 50, y: 50, width: 400, height: 300 };
     const query = new URLSearchParams({
       mode: isAdjustMode ? 'adjust' : 'rest', displayId: display.id,
