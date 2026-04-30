@@ -4,64 +4,74 @@
     <meta charset="UTF-8">
     <style>
         * { margin: 0; padding: 0; overflow: hidden; -webkit-app-region: no-drag; }
-        body { width: 100vw; height: 100vh; background: transparent; }
+        body { width: 100vw; height: 100vh; background: transparent; user-select: none; }
         body.adjust-mode { background: rgba(0,0,0,0.6); }
         #media-container { position: absolute; box-sizing: border-box; overflow: hidden; }
         .media-item { position: absolute; width: 100%; height: 100%; object-fit: contain; top:0; left:0; }
         .hidden { display: none; }
         
-        /* 【UI 重构】调整到底部，完美避开任务栏 */
-        #ui-container {
+        /* 布局定位：悬浮于底部，远离任务栏 */
+        #ui-wrapper {
             position: absolute;
             bottom: 80px; 
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            justify-content: center;
-            pointer-events: none;
+            flex-direction: column;
+            align-items: center;
             z-index: 10;
         }
 
-        /* 苹果 Vision Pro 风格的高级磨砂黑底座 */
+        /* 纯净版药丸底座：不使用 overflow:hidden 彻底解决渲染伪影 */
         #timer-pill {
-            background: rgba(0, 0, 0, 0.55);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 10px 36px;
-            border-radius: 100px;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
-            position: relative;
-            overflow: hidden; /* 装下底部的充能条 */
+            background: rgba(15, 15, 15, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            /* 修正 padding，让文字视觉上绝对居中 */
+            padding: 16px 44px;
+            border-radius: 80px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        /* 硕大且精致的倒计时字体 */
+        /* 倒计时数字：修正行高和字间距带来的偏移 */
         #countdown {
             font-size: 64px;
             color: #ffffff;
-            font-weight: 800;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-            line-height: 1;
-            letter-spacing: 2px;
-            text-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            font-weight: 700;
+            font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+            line-height: 1; 
+            letter-spacing: 4px;
+            /* 关键：抵消字间距在最右侧产生的多余空间，实现真正居中 */
+            margin-right: -4px; 
+            text-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            transition: color 0.3s ease;
         }
 
-        /* 隐藏彩蛋：集成在药丸底座底部的细线充能条 */
-        #progress-bar {
-            position: absolute;
-            bottom: 0;
-            left: 0;
+        /* 独立进度条：放在底座下方，避免被圆角裁切产生毛边 */
+        #progress-track {
+            width: 80%;
             height: 4px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            margin-top: 14px;
+            overflow: hidden;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+
+        #progress-fill {
+            height: 100%;
             width: 0%;
             background: #10B981;
-            box-shadow: 0 0 15px #10B981;
-            transition: width 0s linear;
+            box-shadow: 0 0 12px #10B981;
         }
 
-        #save-btn { position: fixed; bottom: 180px; left: 50%; transform: translateX(-50%); padding: 15px 40px; background: #10B981; color: white; border: none; border-radius: 30px; font-weight: 800; cursor: pointer; pointer-events: auto; display: none; font-size:16px; box-shadow: 0 10px 20px rgba(16,185,129,0.3); z-index: 20; }
+        #save-btn { position: fixed; bottom: 200px; left: 50%; transform: translateX(-50%); padding: 15px 40px; background: #10B981; color: white; border: none; border-radius: 30px; font-weight: 800; cursor: pointer; pointer-events: auto; display: none; font-size:16px; box-shadow: 0 10px 20px rgba(16,185,129,0.3); z-index: 20; }
         body.adjust-mode #save-btn { display: block; outline: 2px dashed #10B981; }
         #save-btn:hover { background: #059669; }
     </style>
@@ -69,10 +79,12 @@
 <body>
     <div id="media-container"><div id="v-wrapper" style="width:100%; height:100%"></div><div id="handle" style="position:absolute; bottom:0; right:0; width:20px; height:20px; background:#10B981; cursor:nwse-resize; display:none; z-index:30;"></div></div>
     
-    <div id="ui-container">
+    <div id="ui-wrapper">
         <div id="timer-pill">
             <div id="countdown">00:00</div>
-            <div id="progress-bar"></div>
+        </div>
+        <div id="progress-track">
+            <div id="progress-fill"></div>
         </div>
     </div>
     
@@ -111,17 +123,21 @@
         }
 
         let escTimer = null, holdStarted = false;
-        const progressBar = document.getElementById('progress-bar');
+        const progressTrack = document.getElementById('progress-track');
+        const progressFill = document.getElementById('progress-fill');
         const countdown = document.getElementById('countdown');
 
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape' && !isAdjust && !holdStarted) {
                 holdStarted = true;
+                
                 // 变绿提示正在触发盲操
                 countdown.style.color = '#10B981';
                 
-                progressBar.style.transition = 'width 2s cubic-bezier(0.2, 1, 0.3, 1)';
-                requestAnimationFrame(() => { progressBar.style.width = '100%'; });
+                // 显示底部的轨道，并开始填满
+                progressTrack.style.opacity = '1';
+                progressFill.style.transition = 'width 2s cubic-bezier(0.2, 1, 0.3, 1)';
+                requestAnimationFrame(() => { progressFill.style.width = '100%'; });
 
                 escTimer = setTimeout(() => { window.electronAPI.endRestEarly(); }, 2000);
             }
@@ -132,8 +148,10 @@
                 clearTimeout(escTimer); holdStarted = false; 
                 countdown.style.color = '#ffffff';
                 
-                progressBar.style.transition = 'width 0.2s ease-out';
-                progressBar.style.width = '0%';
+                // 瞬间退回并隐藏
+                progressFill.style.transition = 'width 0.15s ease-out';
+                progressFill.style.width = '0%';
+                setTimeout(() => { if (!holdStarted) progressTrack.style.opacity = '0'; }, 150);
             }
         });
 
