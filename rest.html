@@ -3,70 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        :root { --panel-bg: rgba(20, 20, 25, 0.85); --text-color: #E2E8F0; --primary: #10B981; --danger: #059669; }
-        html, body { 
-            margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; 
-            background-color: rgba(0, 0, 0, 0) !important; user-select: none;
-            -webkit-app-region: no-drag; 
-        }
-        body.adjust-mode { background-color: rgba(0, 0, 0, 0.6) !important; }
-        #media-container { position: absolute; box-sizing: border-box; }
-        body.adjust-mode #media-container { pointer-events: auto; cursor: move; outline: 2px dashed var(--primary); }
-        body:not(.adjust-mode) #media-container { pointer-events: none; }
-        .media-item { width: 100%; height: 100%; object-fit: contain; }
-        #resize-handle { display: none; position: absolute; bottom: -6px; right: -6px; width: 16px; height: 16px; background: var(--primary); border-radius: 50%; cursor: nwse-resize; }
-        body.adjust-mode #resize-handle { display: block; }
-        #bottom-control-bar {
-            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
-            background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-            padding: 16px 32px; border-radius: 40px; display: flex; align-items: center; gap: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); pointer-events: auto;
-        }
-        #countdown-box { color: var(--text-color); font-size: 22px; font-weight: 600; font-family: monospace; }
-        #action-btn { background: var(--danger); color: white; border: none; padding: 10px 24px; border-radius: 20px; font-weight: 600; cursor: pointer; }
+        * { margin: 0; padding: 0; overflow: hidden; -webkit-app-region: no-drag; }
+        body { width: 100vw; height: 100vh; background: transparent; font-family: monospace; }
+        body.adjust-mode { background: rgba(0,0,0,0.6); }
+        #media-container { position: absolute; box-sizing: border-box; overflow: hidden; }
+        .media-item { position: absolute; width: 100%; height: 100%; object-fit: contain; top:0; left:0; }
+        .hidden { display: none; }
+        
+        #ui-overlay { position: absolute; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #countdown { font-size: 50px; color: white; text-shadow: 0 0 20px rgba(0,0,0,0.9); font-weight: bold; z-index: 10;}
+        #esc-tip { font-size: 16px; color: rgba(255,255,255,0.6); margin-top: 15px; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.5); z-index: 10;}
+        
+        #progress-container { width: 220px; height: 4px; background: rgba(255,255,255,0.15); border-radius: 4px; margin-top: 12px; overflow: hidden; visibility: hidden; opacity: 0; transition: opacity 0.3s; z-index: 10; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        #progress-bar { width: 0%; height: 100%; background: #10B981; box-shadow: 0 0 10px #10B981; transition: width 0s linear; }
+
+        #save-btn { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); padding: 15px 40px; background: #10B981; color: white; border: none; border-radius: 30px; font-weight: 800; cursor: pointer; pointer-events: auto; display: none; font-size:16px; box-shadow: 0 10px 20px rgba(16,185,129,0.3); z-index: 20; }
+        body.adjust-mode #save-btn { display: block; outline: 2px dashed #10B981; }
+        #save-btn:hover { background: #059669; }
     </style>
 </head>
 <body>
-    <div id="media-container"><div id="resize-handle"></div></div>
-    <div id="bottom-control-bar">
-        <div id="countdown-box">00:00</div>
-        <button id="action-btn">提前结束休息</button>
+    <div id="media-container"><div id="v-wrapper" style="width:100%; height:100%"></div><div id="handle" style="position:absolute; bottom:0; right:0; width:20px; height:20px; background:#10B981; cursor:nwse-resize; display:none; z-index:30;"></div></div>
+    
+    <div id="ui-overlay">
+        <div id="countdown">00:00</div>
+        <div id="esc-tip">长按 ESC 结束休息</div>
+        <div id="progress-container"><div id="progress-bar"></div></div>
     </div>
+    
+    <button id="save-btn">退出预览模式</button>
+
     <script>
+        const getFileUrl = (p) => 'file:///' + p.split('\\').join('/').split('/').map(s => encodeURIComponent(s)).join('/').replace('%3A', ':');
         const params = new URLSearchParams(window.location.search);
-        const mode = params.get('mode'); 
-        const isMain = params.get('isMain') === 'true';
-        const container = document.getElementById('media-container');
-        const actionBtn = document.getElementById('action-btn');
-        if (mode === 'adjust') { document.body.classList.add('adjust-mode'); actionBtn.innerText = "保存布局"; }
-        if (isMain && params.get('mediaPath')) {
-            const path = `file://${params.get('mediaPath')}`;
-            container.style.left = `${params.get('x')}px`; container.style.top = `${params.get('y')}px`;
-            container.style.width = `${params.get('w')}px`; container.style.height = `${params.get('h')}px`;
-            const media = document.createElement(params.get('mediaType') === 'video' ? 'video' : 'img');
-            media.src = path; media.className = 'media-item';
-            if (media.tagName === 'VIDEO') { media.loop = true; media.muted = true; media.play(); }
-            container.prepend(media);
+        const mode = params.get('mode'), isAdjust = mode === 'adjust', displayId = params.get('displayId'); 
+        const container = document.getElementById('media-container'), wrapper = document.getElementById('v-wrapper');
+        
+        if (isAdjust) document.body.classList.add('adjust-mode');
+        container.style.cssText = `left:${params.get('x')}px; top:${params.get('y')}px; width:${params.get('w')}px; height:${params.get('h')}px`;
+
+        const p1 = params.get('path1'), p2 = params.get('path2');
+        if (p1) {
+            const v1 = document.createElement(params.get('type') === 'video' ? 'video' : 'img');
+            v1.src = getFileUrl(p1); v1.className = 'media-item'; wrapper.appendChild(v1);
+            if (p2 && v1.tagName === 'VIDEO') {
+                const v2 = document.createElement('video'); v2.src = getFileUrl(p2); v2.className = 'media-item hidden'; v2.loop = true; v2.muted = true; wrapper.appendChild(v2);
+                v1.onended = () => { v1.classList.add('hidden'); v2.classList.remove('hidden'); v2.play().catch(e=>console.log(e)); };
+                v1.autoplay = true; v1.muted = true; v1.play().catch(e=>console.log(e));
+            } else if (v1.tagName === 'VIDEO') { v1.loop = true; v1.autoplay = true; v1.muted = true; v1.play().catch(e=>console.log(e)); }
         }
-        actionBtn.addEventListener('click', () => {
-            if (mode === 'adjust') {
-                const r = container.getBoundingClientRect();
-                window.electronAPI.saveLayout({ x: r.left, y: r.top, width: r.width, height: r.height });
-            } else window.electronAPI.endRestEarly();
-        });
-        if (mode === 'adjust') {
-            let drag = false, resize = false, ox, oy, sw, sh, sx, sy;
-            container.onmousedown = (e) => { if(e.target.id!=='resize-handle') {drag=true; ox=e.clientX-container.offsetLeft; oy=e.clientY-container.offsetTop;} };
-            document.getElementById('resize-handle').onmousedown = (e) => { e.stopPropagation(); resize=true; sw=container.offsetWidth; sh=container.offsetHeight; sx=e.clientX; sy=e.clientY; };
-            document.onmousemove = (e) => {
-                if(drag) { container.style.left=`${e.clientX-ox}px`; container.style.top=`${e.clientY-oy}px`; }
-                else if(resize) { container.style.width=`${sw+(e.clientX-sx)}px`; container.style.height=`${sh+(e.clientY-sy)}px`; }
-            };
-            document.onmouseup = () => drag = resize = false;
+
+        if (isAdjust) {
+            document.getElementById('handle').style.display = 'block';
+            let d = false, r = false, ox, oy, sw, sh, sx, sy;
+            const saveCurrentState = () => { const rect = container.getBoundingClientRect(); window.electronAPI.updateLayout({ displayId: displayId, layout: { x: rect.left, y: rect.top, width: rect.width, height: rect.height } }); };
+            container.onmousedown = e => { if(e.target.id!=='handle'){d=true; ox=e.clientX-container.offsetLeft; oy=e.clientY-container.offsetTop;} };
+            document.getElementById('handle').onmousedown = e => { e.stopPropagation(); r=true; sw=container.offsetWidth; sh=container.offsetHeight; sx=e.clientX; sy=e.clientY; };
+            document.onmousemove = e => { if(d) { container.style.left=`${e.clientX-ox}px`; container.style.top=`${e.clientY-oy}px`; } else if(r) { container.style.width=`${sw+(e.clientX-sx)}px`; container.style.height=`${sh+(e.clientY-sy)}px`; } };
+            document.onmouseup = () => { if (d || r) saveCurrentState(); d = r = false; };
+            window.onblur = () => { if (d || r) saveCurrentState(); d = r = false; };
+            document.getElementById('save-btn').onclick = () => window.electronAPI.exitAdjustMode();
         }
-        window.electronAPI.onTimerUpdate((t) => {
-            const m = Math.floor(t/60).toString().padStart(2,'0'), s = (t%60).toString().padStart(2,'0');
-            document.getElementById('countdown-box').innerText = `${m}:${s}`;
+
+        let escTimer = null, holdStarted = false;
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const escTip = document.getElementById('esc-tip');
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && !isAdjust && !holdStarted) {
+                holdStarted = true;
+                escTip.innerText = '正在结束...'; escTip.style.color = '#10B981';
+                
+                progressContainer.style.visibility = 'visible';
+                progressContainer.style.opacity = '1';
+                progressBar.style.transition = 'width 2s cubic-bezier(0.2, 1, 0.3, 1)';
+                requestAnimationFrame(() => { progressBar.style.width = '100%'; });
+
+                escTimer = setTimeout(() => { window.electronAPI.endRestEarly(); }, 2000);
+            }
         });
+        
+        document.addEventListener('keyup', e => {
+            if (e.key === 'Escape') { 
+                clearTimeout(escTimer); holdStarted = false; 
+                escTip.innerText = '长按 ESC 结束休息'; escTip.style.color = 'rgba(255,255,255,0.6)';
+                
+                progressBar.style.transition = 'width 0.2s ease-out';
+                progressBar.style.width = '0%';
+                setTimeout(() => { if (!holdStarted) { progressContainer.style.opacity = '0'; progressContainer.style.visibility = 'hidden'; } }, 200);
+            }
+        });
+
+        window.electronAPI.onTimerUpdate(t => { const m = Math.floor(t/60).toString().padStart(2,'0'), s = (t%60).toString().padStart(2,'0'); document.getElementById('countdown').innerText = `${m}:${s}`; });
+        window.electronAPI.onCleanup(() => { wrapper.innerHTML = ''; });
     </script>
 </body>
 </html>
