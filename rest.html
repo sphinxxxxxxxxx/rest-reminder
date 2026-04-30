@@ -4,20 +4,64 @@
     <meta charset="UTF-8">
     <style>
         * { margin: 0; padding: 0; overflow: hidden; -webkit-app-region: no-drag; }
-        body { width: 100vw; height: 100vh; background: transparent; font-family: monospace; }
+        body { width: 100vw; height: 100vh; background: transparent; }
         body.adjust-mode { background: rgba(0,0,0,0.6); }
         #media-container { position: absolute; box-sizing: border-box; overflow: hidden; }
         .media-item { position: absolute; width: 100%; height: 100%; object-fit: contain; top:0; left:0; }
         .hidden { display: none; }
         
-        #ui-overlay { position: absolute; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        #countdown { font-size: 50px; color: white; text-shadow: 0 0 20px rgba(0,0,0,0.9); font-weight: bold; z-index: 10;}
-        #esc-tip { font-size: 16px; color: rgba(255,255,255,0.6); margin-top: 15px; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.5); z-index: 10;}
-        
-        #progress-container { width: 220px; height: 4px; background: rgba(255,255,255,0.15); border-radius: 4px; margin-top: 12px; overflow: hidden; visibility: hidden; opacity: 0; transition: opacity 0.3s; z-index: 10; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
-        #progress-bar { width: 0%; height: 100%; background: #10B981; box-shadow: 0 0 10px #10B981; transition: width 0s linear; }
+        /* 【UI 重构】调整到底部，完美避开任务栏 */
+        #ui-container {
+            position: absolute;
+            bottom: 80px; 
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            justify-content: center;
+            pointer-events: none;
+            z-index: 10;
+        }
 
-        #save-btn { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); padding: 15px 40px; background: #10B981; color: white; border: none; border-radius: 30px; font-weight: 800; cursor: pointer; pointer-events: auto; display: none; font-size:16px; box-shadow: 0 10px 20px rgba(16,185,129,0.3); z-index: 20; }
+        /* 苹果 Vision Pro 风格的高级磨砂黑底座 */
+        #timer-pill {
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 10px 36px;
+            border-radius: 100px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+            position: relative;
+            overflow: hidden; /* 装下底部的充能条 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 硕大且精致的倒计时字体 */
+        #countdown {
+            font-size: 64px;
+            color: #ffffff;
+            font-weight: 800;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+            line-height: 1;
+            letter-spacing: 2px;
+            text-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        /* 隐藏彩蛋：集成在药丸底座底部的细线充能条 */
+        #progress-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            width: 0%;
+            background: #10B981;
+            box-shadow: 0 0 15px #10B981;
+            transition: width 0s linear;
+        }
+
+        #save-btn { position: fixed; bottom: 180px; left: 50%; transform: translateX(-50%); padding: 15px 40px; background: #10B981; color: white; border: none; border-radius: 30px; font-weight: 800; cursor: pointer; pointer-events: auto; display: none; font-size:16px; box-shadow: 0 10px 20px rgba(16,185,129,0.3); z-index: 20; }
         body.adjust-mode #save-btn { display: block; outline: 2px dashed #10B981; }
         #save-btn:hover { background: #059669; }
     </style>
@@ -25,10 +69,11 @@
 <body>
     <div id="media-container"><div id="v-wrapper" style="width:100%; height:100%"></div><div id="handle" style="position:absolute; bottom:0; right:0; width:20px; height:20px; background:#10B981; cursor:nwse-resize; display:none; z-index:30;"></div></div>
     
-    <div id="ui-overlay">
-        <div id="countdown">00:00</div>
-        <div id="esc-tip">长按 ESC 结束休息</div>
-        <div id="progress-container"><div id="progress-bar"></div></div>
+    <div id="ui-container">
+        <div id="timer-pill">
+            <div id="countdown">00:00</div>
+            <div id="progress-bar"></div>
+        </div>
     </div>
     
     <button id="save-btn">退出预览模式</button>
@@ -66,17 +111,15 @@
         }
 
         let escTimer = null, holdStarted = false;
-        const progressContainer = document.getElementById('progress-container');
         const progressBar = document.getElementById('progress-bar');
-        const escTip = document.getElementById('esc-tip');
+        const countdown = document.getElementById('countdown');
 
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape' && !isAdjust && !holdStarted) {
                 holdStarted = true;
-                escTip.innerText = '正在结束...'; escTip.style.color = '#10B981';
+                // 变绿提示正在触发盲操
+                countdown.style.color = '#10B981';
                 
-                progressContainer.style.visibility = 'visible';
-                progressContainer.style.opacity = '1';
                 progressBar.style.transition = 'width 2s cubic-bezier(0.2, 1, 0.3, 1)';
                 requestAnimationFrame(() => { progressBar.style.width = '100%'; });
 
@@ -87,11 +130,10 @@
         document.addEventListener('keyup', e => {
             if (e.key === 'Escape') { 
                 clearTimeout(escTimer); holdStarted = false; 
-                escTip.innerText = '长按 ESC 结束休息'; escTip.style.color = 'rgba(255,255,255,0.6)';
+                countdown.style.color = '#ffffff';
                 
                 progressBar.style.transition = 'width 0.2s ease-out';
                 progressBar.style.width = '0%';
-                setTimeout(() => { if (!holdStarted) { progressContainer.style.opacity = '0'; progressContainer.style.visibility = 'hidden'; } }, 200);
             }
         });
 
