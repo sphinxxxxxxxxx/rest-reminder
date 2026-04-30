@@ -21,6 +21,26 @@ function getIconPath() {
   return (app.isPackaged && fs.existsSync(p)) ? p : (fs.existsSync(d) ? d : null);
 }
 
+// 【新增核心功能】动态更新托盘菜单状态
+function updateTrayMenu() {
+  if (!tray) return;
+  const isResting = timerState === 'resting';
+  
+  const contextMenu = Menu.buildFromTemplate([
+    { 
+        label: '控制面板', 
+        enabled: !isResting, // 休息时变灰，禁止点击
+        click: () => mainWindow.show() 
+    }, 
+    { 
+        label: isResting ? '🚫 休息中严禁退出' : '彻底退出', // 休息时文字警告
+        enabled: !isResting, // 休息时彻底封死退出通道
+        click: () => { isQuitting = true; app.exit(); } 
+    }
+  ]);
+  tray.setContextMenu(contextMenu);
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 800, height: 540, transparent: true, frame: false, hasShadow: true, icon: getIconPath(),
@@ -36,12 +56,12 @@ function createMainWindow() {
 
 function showRestWindows(isAdjustMode = false) {
   destroyRestWindows(); 
+  
   screen.getAllDisplays().forEach((display) => {
     let win = new BrowserWindow({
       x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height,
       transparent: true, frame: false, resizable: false, movable: false, thickFrame: false,      
       alwaysOnTop: !isAdjustMode, skipTaskbar: true, fullscreen: true, backgroundColor: '#00000000',
-      kiosk: !isAdjustMode, // 【关键新增】非调整模式下开启 Kiosk 霸屏模式，屏蔽系统快捷键
       webPreferences: { preload: path.join(__dirname, 'preload.js') }
     });
     
@@ -59,13 +79,20 @@ function showRestWindows(isAdjustMode = false) {
 }
 
 function destroyRestWindows() {
-  restWindows.forEach(win => { if (win && !win.isDestroyed()) { win.webContents.send('cleanup-before-destroy'); setTimeout(() => { if (!win.isDestroyed()) win.destroy(); }, 50); } });
+  restWindows.forEach(win => { 
+      if (win && !win.isDestroyed()) { 
+          win.webContents.send('cleanup-before-destroy'); 
+          setTimeout(() => { if (!win.isDestroyed()) win.destroy(); }, 50); 
+      } 
+  });
   restWindows = [];
 }
 
 function startTimer(type) {
   if (timerInterval) clearInterval(timerInterval);
   timerState = type;
+  
+  updateTrayMenu(); // 【触发点】状态改变时，立刻刷新托盘锁死状态
   
   const durationInSeconds = (type === 'working' ? userConfig.workTime : userConfig.restTime) * 60;
   targetEndTime = Date.now() + durationInSeconds * 1000; 
@@ -82,11 +109,6 @@ function startTimer(type) {
     if (timeLeft <= 0) startTimer(timerState === 'working' ? 'resting' : 'working');
   }, 1000);
 }
-
-ipcMain.on('hide-window', () => mainWindow?.hide());
-ipcMain.on('min-window', () => mainWindow?.minimize());
-ipcMain.on('restart-work', () => startTimer('working'));
-ipcMain.on('end-rest-early', () => startTimer('working'));
 
 ipcMain.handle('upload-media', async (e, isSecondary) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { filters: [{ name: 'Media', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm'] }], properties: ['openFile'] });
@@ -106,8 +128,18 @@ ipcMain.handle('upload-media', async (e, isSecondary) => {
   return { path: destPath, isSecondary, hasSecondary: !!userConfig.mediaPath2 };
 });
 
+ipcMain.on('hide-window', () => mainWindow?.hide());
+ipcMain.on('min-window', () => mainWindow?.minimize());
+ipcMain.on('restart-work', () => startTimer('working'));
+ipcMain.on('end-rest-early', () => startTimer('working'));
 ipcMain.on('start-work', (e, config) => { userConfig = { ...userConfig, ...config }; saveConfig(); startTimer('working'); });
-ipcMain.on('preview-mode', (e, config) => { userConfig = { ...userConfig, ...config }; saveConfig(); if (timerInterval) clearInterval(timerInterval); timerState = 'idle'; showRestWindows(true); });
+ipcMain.on('preview-mode', (e, config) => { 
+    userConfig = { ...userConfig, ...config }; saveConfig(); 
+    if (timerInterval) clearInterval(timerInterval); 
+    timerState = 'idle'; 
+    updateTrayMenu(); // 预览模式下恢复托盘权限
+    showRestWindows(true); 
+});
 ipcMain.on('update-layout', (e, { displayId, layout }) => { userConfig.layouts[displayId] = layout; saveConfig(); });
 ipcMain.on('exit-adjust-mode', () => { destroyRestWindows(); });
 
@@ -118,10 +150,12 @@ app.whenReady().then(() => {
       if (icon) {
         try {
             tray = new Tray(icon);
-            tray.setContextMenu(Menu.buildFromTemplate([{ label: '控制面板', click: () => mainWindow.show() }, { label: '彻底退出', click: () => { isQuitting = true; app.exit(); } }]));
-            tray.on('click', () => mainWindow.show());
+            updateTrayMenu(); // 初始化托盘
+            // 休息期间，甚至连左键双击托盘试图唤醒主面板的操作也一起屏蔽掉
+            tray.on('click', () => { if (timerState !== 'resting') mainWindow.show(); });
         } catch(err) {}
       }
   }, 500);
 });
+
 process.on('uncaughtException', (err) => { console.error(err); });
