@@ -6,12 +6,19 @@ let mainWindow = null, tray = null, restWindows = [], timerState = 'idle';
 let timeLeft = 0, timerInterval = null, targetEndTime = 0; 
 let isQuitting = false;
 
+// 初始化默认配置与存档路径
 let userConfig = { workTime: 45, restTime: 5, mediaPath: '', mediaPath2: '', mediaType: '', layouts: {} };
 const configPath = path.join(app.getPath('userData'), 'user_config.json');
 
-function loadConfig() { if (fs.existsSync(configPath)) { try { userConfig = { ...userConfig, ...JSON.parse(fs.readFileSync(configPath, 'utf8')) }; } catch(e) {} } }
+function loadConfig() { 
+    if (fs.existsSync(configPath)) { 
+        try { userConfig = { ...userConfig, ...JSON.parse(fs.readFileSync(configPath, 'utf8')) }; } 
+        catch(e) { console.error('加载存档失败:', e); } 
+    } 
+}
 function saveConfig() { fs.writeFileSync(configPath, JSON.stringify(userConfig)); }
 
+// 单例锁：防止用户疯狂点击打开无数个软件
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) app.quit();
 else app.on('second-instance', () => { if (mainWindow) { mainWindow.restore(); mainWindow.show(); mainWindow.focus(); } });
@@ -21,22 +28,14 @@ function getIconPath() {
   return (app.isPackaged && fs.existsSync(p)) ? p : (fs.existsSync(d) ? d : null);
 }
 
-// 【新增核心功能】动态更新托盘菜单状态
+// 动态托盘权限控制
 function updateTrayMenu() {
   if (!tray) return;
   const isResting = timerState === 'resting';
   
   const contextMenu = Menu.buildFromTemplate([
-    { 
-        label: '控制面板', 
-        enabled: !isResting, // 休息时变灰，禁止点击
-        click: () => mainWindow.show() 
-    }, 
-    { 
-        label: isResting ? '🚫 休息中严禁退出' : '彻底退出', // 休息时文字警告
-        enabled: !isResting, // 休息时彻底封死退出通道
-        click: () => { isQuitting = true; app.exit(); } 
-    }
+    { label: '控制面板', enabled: !isResting, click: () => mainWindow.show() }, 
+    { label: isResting ? '🚫 休息中严禁退出' : '彻底退出', enabled: !isResting, click: () => { isQuitting = true; app.exit(); } }
   ]);
   tray.setContextMenu(contextMenu);
 }
@@ -65,6 +64,7 @@ function showRestWindows(isAdjustMode = false) {
       webPreferences: { preload: path.join(__dirname, 'preload.js') }
     });
     
+    // 非调整模式下开启最高级别置顶
     if (!isAdjustMode) win.setAlwaysOnTop(true, 'screen-saver'); 
     
     const layout = userConfig.layouts[display.id] || { x: 50, y: 50, width: 400, height: 300 };
@@ -88,11 +88,11 @@ function destroyRestWindows() {
   restWindows = [];
 }
 
+// 核心：基于绝对时间戳的精准计时算法
 function startTimer(type) {
   if (timerInterval) clearInterval(timerInterval);
   timerState = type;
-  
-  updateTrayMenu(); // 【触发点】状态改变时，立刻刷新托盘锁死状态
+  updateTrayMenu(); // 状态改变，同步锁死或解锁托盘
   
   const durationInSeconds = (type === 'working' ? userConfig.workTime : userConfig.restTime) * 60;
   targetEndTime = Date.now() + durationInSeconds * 1000; 
@@ -110,6 +110,7 @@ function startTimer(type) {
   }, 1000);
 }
 
+// 文件上传与自动粉碎旧垃圾逻辑
 ipcMain.handle('upload-media', async (e, isSecondary) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { filters: [{ name: 'Media', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm'] }], properties: ['openFile'] });
   if (canceled) return null;
@@ -128,6 +129,7 @@ ipcMain.handle('upload-media', async (e, isSecondary) => {
   return { path: destPath, isSecondary, hasSecondary: !!userConfig.mediaPath2 };
 });
 
+// 前端操作信号监听
 ipcMain.on('hide-window', () => mainWindow?.hide());
 ipcMain.on('min-window', () => mainWindow?.minimize());
 ipcMain.on('restart-work', () => startTimer('working'));
@@ -136,26 +138,28 @@ ipcMain.on('start-work', (e, config) => { userConfig = { ...userConfig, ...confi
 ipcMain.on('preview-mode', (e, config) => { 
     userConfig = { ...userConfig, ...config }; saveConfig(); 
     if (timerInterval) clearInterval(timerInterval); 
-    timerState = 'idle'; 
-    updateTrayMenu(); // 预览模式下恢复托盘权限
+    timerState = 'idle'; updateTrayMenu(); 
     showRestWindows(true); 
 });
 ipcMain.on('update-layout', (e, { displayId, layout }) => { userConfig.layouts[displayId] = layout; saveConfig(); });
 ipcMain.on('exit-adjust-mode', () => { destroyRestWindows(); });
 
+// 程序主入口
 app.whenReady().then(() => {
-  loadConfig(); createMainWindow();
+  loadConfig(); 
+  createMainWindow();
   setTimeout(() => {
       const icon = getIconPath();
       if (icon) {
         try {
             tray = new Tray(icon);
-            updateTrayMenu(); // 初始化托盘
-            // 休息期间，甚至连左键双击托盘试图唤醒主面板的操作也一起屏蔽掉
+            updateTrayMenu(); 
+            tray.setToolTip('Rest Reminder');
+            // 休息期间彻底无视鼠标左键
             tray.on('click', () => { if (timerState !== 'resting') mainWindow.show(); });
-        } catch(err) {}
+        } catch(err) { console.error('托盘初始化失败:', err); }
       }
   }, 500);
 });
 
-process.on('uncaughtException', (err) => { console.error(err); });
+process.on('uncaughtException', (err) => { console.error('系统崩溃拦截:', err); });
